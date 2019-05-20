@@ -1,4 +1,4 @@
 #!/bin/bash
 cd /home/ec2-user/node-website
-export PORT=80
+export PORT=3000
 forever start app.js
