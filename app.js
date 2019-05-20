@@ -1,60 +1,77 @@
-var port = process.env.PORT || 3000,
-    http = require('http'),
-    fs = require('fs');
+const express = require('express')
+const app = express();
+const https = require('https');
+const fs = require('fs');
+let Rooms = {};
+let https_server = https.createServer({
+    key:fs.readFileSync("my-key.pem"),
+    cert:fs.readFileSync("my-cert.pem")
+  },app);
 
-var app = http.createServer(function (req, res) {
-  if (req.url.indexOf('/img') != -1) {
-    var filePath = req.url.split('/img')[1];
-    fs.readFile(__dirname + '/public/img' + filePath, function (err, data) {
-      if (err) {
-        res.writeHead(404, {'Content-Type': 'text/plain'});
-        res.write('Error 404: Resource not found.');
-        console.log(err);
-      } else {
-        res.writeHead(200, {'Content-Type': 'image/svg+xml'});
-        res.write(data);
-      }  
-      res.end();
-    });
-  } else if (req.url.indexOf('/js') != -1) {
-    var filePath = req.url.split('/js')[1];
-    fs.readFile(__dirname + '/public/js' + filePath, function (err, data) {
-      if (err) {
-        res.writeHead(404, {'Content-Type': 'text/plain'});
-        res.write('Error 404: Resource not found.');
-        console.log(err);
-      } else {
-        res.writeHead(200, {'Content-Type': 'text/javascript'});
-        res.write(data);
-      }  
-      res.end();
-    });
-  } else if(req.url.indexOf('/css') != -1) {
-    var filePath = req.url.split('/css')[1];
-    fs.readFile(__dirname + '/public/css' + filePath, function (err, data) {
-      if (err) {
-        res.writeHead(404, {'Content-Type': 'text/plain'});
-        res.write('Error 404: Resource not found.');
-        console.log(err);
-      } else {
-        res.writeHead(200, {'Content-Type': 'text/css'});
-        res.write(data);
-      }
-      res.end();
-    });
-  } else {
-    fs.readFile(__dirname + '/public/index.html', function (err, data) {
-      if (err) {
-        res.writeHead(404, {'Content-Type': 'text/plain'});
-        res.write('Error 404: Resource not found.');
-        console.log(err);
-      } else {
-        res.writeHead(200, {'Content-Type': 'text/html'});
-        res.write(data);
-      }
-      res.end();
-    });
-  }
-}).listen(port, '0.0.0.0');
 
-module.exports = app;
+const io = require('socket.io')(https_server)
+const port = process.env.PORT || 3000
+
+app.use(express.static(__dirname + "/public"))
+
+
+io.on('connection', function (socket) {
+
+   
+    socket.on('token_number',function(token){
+
+        if(!Rooms[token]){
+            Rooms[token]=[socket.id]
+        }else{
+            Rooms[token].push(socket.id)
+        }
+        
+        console.log(Rooms)
+        Rooms[token].forEach(function(SocketId){
+            io.to(SocketId).emit("user-joined", socket.id, Rooms[token].length,Rooms[token])
+        })
+         
+        /*io.sockets.emit("user-joined", socket.id, io.engine.clientsCount, Object.keys(io.sockets.clients().sockets));*/
+    })
+	socket.on('signal', (toId, message) => {
+		io.to(toId).emit('signal', socket.id, message);
+  	});
+
+    socket.on("message", function(data){
+		io.sockets.emit("broadcast-message", socket.id, data);
+    })
+
+	socket.on('disconnect', function() {
+        let MyRoom
+        let token
+        Object.keys(Rooms).forEach(function(RoomId){
+            for(let i=0;i<Rooms[RoomId].length;i++){
+                if(Rooms[RoomId][i]==socket.id){
+                    token = RoomId;
+                    Rooms[RoomId][i]=undefined;
+                }
+            }
+            Rooms[RoomId] =  Rooms[RoomId].filter(n=>n)
+                 if(Rooms[RoomId].length == 0){
+                     delete Rooms[RoomId]
+                    }
+        })
+        console.log(Rooms)
+        if(Rooms[token]){
+            Rooms[token].forEach(function(SocketId){
+                io.to(SocketId).emit("user-left", socket.id)
+            })
+        }
+     
+
+
+	})
+
+})
+
+
+
+https_server.listen(port, () => console.log(`Active on ${port} port`))
+
+
+
